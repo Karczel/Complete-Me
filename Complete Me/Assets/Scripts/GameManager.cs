@@ -17,6 +17,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private List<Texture2D> imageTextures;
     [SerializeField] private Transform levelSelectPanel;
     [SerializeField] private Image levelSelectPrefab;
+    [SerializeField] private GameObject playAgainButton;
 
     private List<Transform> pieces;
     private Vector2Int dimensions;
@@ -24,6 +25,9 @@ public class GameManager : MonoBehaviour
     private float height;
 
     private Transform draggingPiece = null;
+    private Vector3 offset;
+
+    private int piecesCorrect;
 
     void Start()
     {
@@ -54,6 +58,9 @@ public class GameManager : MonoBehaviour
 
         // Update the border to fit the chosen puzzle.
         UpdateBorder();
+
+        // As we're starting the puzzle there will be no correct pieces.
+        piecesCorrect = 0;
     }
 
     Vector2Int GetDimensions(Texture2D jigsawTexture, int difficulty) {
@@ -125,8 +132,8 @@ public class GameManager : MonoBehaviour
 
         // Place each pieces randomly in the visible area.
         foreach (Transform piece in pieces){
-            float x = Random.Range(-orthoWidth, orthoHeight);
-            float y = Random.Range(-orthoHeight, orthoWidth);
+            float x = Random.Range(-orthoWidth, orthoWidth);
+            float y = Random.Range(-orthoHeight, orthoHeight);
             piece.position = new Vector3(x, y, -1);
         }
     }
@@ -164,18 +171,62 @@ public class GameManager : MonoBehaviour
             if (hit) {
                 // Everything is movable, so we don't need to check it's a Piece.
                 draggingPiece = hit.transform;
+                offset = draggingPiece.position - Camera.main.ScreenToWorldPoint(Input.mousePosition);
+                offset += Vector3.back;
             }
         }
         // When we release the mouse button stop dragging.
         if (draggingPiece && Input.GetMouseButtonUp(0)) {
+            SnapAndDisableIfCorrect();
+            draggingPiece.position += Vector3.forward;
             draggingPiece = null;
         }
 
         // Set the dragged piece position to the position of the mouse.
         if (draggingPiece) {
             Vector3 newPosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-            newPosition.z = draggingPiece.position.z;
+            // newPosition.z = draggingPiece.position.z;
+            newPosition += offset;
             draggingPiece.position = newPosition;
         }
+    }
+    private void SnapAndDisableIfCorrect() {
+        // We need to know the index of the piece to determine it's correct position.
+        int pieceIndex = pieces.IndexOf(draggingPiece);
+
+        // The coordinates of the piece in the puzzle.
+        int col = pieceIndex % dimensions.x;
+        int row = pieceIndex / dimensions.x;
+
+        // The target position in the non-scaled coordinates.
+        Vector2 targetPosition = new((-width * dimensions.x / 2)+ (width * col) + (width / 2),
+                                        (-height * dimensions.y / 2) + (height * row) + (height / 2));
+
+        // Check if we're in the correct location.
+        if (Vector2.Distance(draggingPiece.localPosition, targetPosition) < (width / 2)) {
+            // Snap to our destination.
+            draggingPiece.localPosition = targetPosition;
+
+            // Disable the collider so we can't click on the object anymore.
+            draggingPiece.GetComponent<BoxCollider2D>().enabled = false;
+            
+            // Increase the number of correct pieces, and check for puzzle completion.
+            piecesCorrect++;
+            if (piecesCorrect == pieces.Count) {
+                playAgainButton.SetActive(true);
+            }
+        }
+    }
+    public void RestartGame() {
+        // Destroy all the puzzle pieces.
+        foreach (Transform piece in pieces) {
+            Destroy(piece.gameObject);
+        }
+        pieces.Clear();
+        // Hide the outline
+        gameHolder.GetComponent<LineRenderer>().enabled = false;
+        // Show the level select UI.
+        playAgainButton.SetActive(false);
+        levelSelectPanel.gameObject.SetActive(true);
     }
 }
